@@ -3,6 +3,35 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { Builder } from 'xml2js';
 import { sanityClient } from '../../sanity';
 
+// TypeScript-typer for produkt og attributter
+interface Attribute {
+  name: string;
+  value: string;
+}
+
+interface Image {
+  asset: { url: string };
+}
+
+interface Dimensions {
+  width?: number;
+  height?: number;
+  depth?: number;
+}
+
+interface Product {
+  _id: string;
+  title: string;
+  sku: string;
+  description?: string;
+  price: number;
+  inStock: boolean;
+  weight?: number;
+  dimensions?: Dimensions;
+  attributes?: Attribute[];
+  images?: Image[];
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     // Hent alle produkter fra Sanity
@@ -15,23 +44,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       inStock,
       weight,
       dimensions,
-      attributes[]{
-        name,
-        value
-      },
-      images[]{
-        asset->{
-          url
-        }
-      }
+      attributes[]{ name, value },
+      images[]{ asset->{ url } }
     }`;
 
-    const products = await sanityClient.fetch(query);
+    const products = await sanityClient.fetch<Product[]>(query);
 
     // Map produkter til XML-struktur
     const data = {
       catalog: {
-        product: products.map((p: any) => ({
+        product: products.map((p) => ({
           $: { id: p._id },
           name: p.title,
           sku: p.sku,
@@ -45,13 +67,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             depth: p.dimensions?.depth,
           },
           attributes: {
-            attribute: (p.attributes || []).map((a: any) => ({
+            attribute: (p.attributes || []).map((a) => ({
               _: a.value,
               $: { name: a.name },
             })),
           },
           images: {
-            image: (p.images || []).map((img: any) => ({
+            image: (p.images || []).map((img) => ({
               _: img.asset.url,
               $: { type: 'main' },
             })),
@@ -64,7 +86,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const builder = new Builder({ headless: true });
     const xml = builder.buildObject(data);
 
-    // Returner XML med riktig Content-Type
+    // Returner XML
     res.setHeader('Content-Type', 'application/xml');
     res.status(200).send(xml);
   } catch (error) {
